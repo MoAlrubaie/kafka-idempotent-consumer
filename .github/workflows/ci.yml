@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Tests (Java ${{ matrix.java }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        java: ["21", "25"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+          cache: maven
+      - name: Check formatting
+        run: ./mvnw -B -q spotless:check
+      - name: Unit and end-to-end tests (in-process Kafka, then Redpanda and Postgres via Testcontainers)
+        run: ./mvnw -B test
+      - name: Demo (in-process Kafka and H2)
+        run: make demo
+
+  compose:
+    name: Demo on the docker compose stack
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - run: make up
+      - name: Demo (Redpanda and Postgres)
+        shell: bash
+        run: |
+          set -o pipefail
+          make demo-redpanda | tee demo.txt
+          { echo '## Demo on Redpanda and Postgres'; echo '```'; cat demo.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - name: Container logs
+        if: failure()
+        run: docker compose logs
+      - run: make down
+        if: always()

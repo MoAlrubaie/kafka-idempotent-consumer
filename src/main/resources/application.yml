@@ -1,0 +1,37 @@
+spring:
+  application:
+    name: refund-payer
+  main:
+    banner-mode: off
+  kafka:
+    bootstrap-servers: localhost:19092 # Redpanda from docker-compose.yml
+    consumer:
+      group-id: refund-payer
+      auto-offset-reset: earliest
+      enable-auto-commit: false # commit only after the work is done
+      max-poll-records: 50
+      properties:
+        max.poll.interval.ms: 300000 # must outlast handling a whole poll's worth of records
+    producer:
+      acks: all
+      properties:
+        enable.idempotence: true # stops the producer's own retries writing twice, nothing more
+    listener:
+      ack-mode: record # commit each record's offset right after the listener returns
+  datasource:
+    # In-memory by default. The demo points this at a fresh database per sink, or at Postgres.
+    url: jdbc:h2:mem:refunds;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;DB_CLOSE_DELAY=-1
+  sql:
+    init:
+      mode: always
+
+app:
+  topic: refunds.approved
+  dead-letter-topic: refunds.approved.DLT
+  partitions: 3
+  sink: idempotent # naive | check-then-record | idempotent
+  attempts: 3
+  retry-backoff: 200ms
+  chaos:
+    crash-after-effect-rate: 0 # off unless you turn it on
+    seed: 7
